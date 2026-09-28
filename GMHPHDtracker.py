@@ -12,7 +12,6 @@ class GMPHDTracker:
         self.merge_thresh = merge_thresh
         
         # Noise Matrices (Eq. 9)
-        # TODO: Construct Qt (4x4) and Rt (2x2) based on Eq. 9
         self.Qt = self._build_process_noise(process_noise_std, dt)
         self.Rt = np.diag([dist_noise_std**2, bear_noise_std**2])
         
@@ -26,7 +25,6 @@ class GMPHDTracker:
         self.gaussians = []
 
     def _build_process_noise(self, sigma_v, dt):
-        # TODO: Implement Eq. 9 for Qt
         t4 = (dt**4) / 4
         t3 = (dt**3) / 2
         t2 = dt**2
@@ -45,16 +43,13 @@ class GMPHDTracker:
         Predicts the next state for all existing Gaussians.
         ego_velocity: 2x1 array [v_x_uav, v_y_uav] (Your drone's velocity)
         """
+        ego_velocity = np.asarray(ego_velocity, dtype=float).reshape(-1)
         u_t = self.Ct @ ego_velocity
-        
+
         for g in self.gaussians:
-            # TODO: Implement Eq. 5
-            # g['mean'] = ...
-            # g['cov'] = ...
-            ego_velocity = np.asarray(ego_velocity).flatten()  # Ensure it's a column vector
+            # Eq. 5: propagate each Gaussian mean and covariance forward in time.
             g['mean'] = self.Ft @ g['mean'] + u_t
             g['cov'] = self.Ft @ g['cov'] @ self.Ft.T + self.Qt
-            pass
 
     # ---------------------------------------------------------
     # PHASE B: UPDATE (Measurement Update / EKF)
@@ -71,9 +66,13 @@ class GMPHDTracker:
             return np.zeros((2, 4)) # Avoid division by zero
             
         Ht = np.zeros((2, 4))
-        # TODO: Fill in the 4 values for Ht based on Eq. 8
+        # Jacobian for the polar observation model.
         # Row 0: derivatives for distance (d)
         # Row 1: derivatives for bearing (beta)
+        jacobian_ht = np.array([[px/d, py/d, 0, 0],
+                                [-py/d_sq, px/d_sq, 0, 0]])
+        Ht = jacobian_ht
+        
         pass
         return Ht
 
@@ -91,42 +90,71 @@ class GMPHDTracker:
         Updates the Gaussian mixture using new polar measurements [d, beta].
         measurements: List of 2x1 arrays.
         """
+        if not measurements:
+            return
+
+        measurements = [np.asarray(m, dtype=float).reshape(2) for m in measurements]
         new_gaussians = []
-        
-        # 1. Update existing Gaussians with each measurement
+        matched_measurements = set()
+
+        # Track which measurement has already been explained by a Gaussian.
+        # Without this check, the same observation can be re-used as a birth candidate
+        # on every iteration, causing duplicate newborn components and unstable PHD growth.
         for g in self.gaussians:
-            for z in measurements:
+            for idx, z in enumerate(measurements):
+                if idx in matched_measurements:
+                    continue
+
                 Ht = self._get_jacobian(g['mean'])
                 z_pred = self._observation_model(g['mean'])
-                
+
                 # Innovation (Residual)
                 y = z - z_pred
                 # Normalize bearing angle to [-pi, pi]
-                y[1] = (y[1] + np.pi) % (2 * np.pi) - np.pi 
-                
+                y[1] = (y[1] + np.pi) % (2 * np.pi) - np.pi
+
                 # Innovation Covariance
                 St = Ht @ g['cov'] @ Ht.T + self.Rt
-                
-                # Kalman Gain
-                Kt = g['cov'] @ Ht.T @ np.linalg.inv(St)
-                
-                # TODO: Calculate updated mean and cov (Standard EKF equations)
-                # new_mean = ...
-                # new_cov = ...
-                
-                # Calculate weight update (likelihood)
-                # TODO: Calculate the Gaussian likelihood of the measurement
-                
+                if np.linalg.det(St) <= 1e-12:
+                    continue
+
+                # Use the inverse covariance directly for the Gaussian likelihood.
+                St_inv = np.linalg.inv(St)
+                gaussian_likelihood = (
+                    np.exp(-0.5 * y.T @ St_inv @ y)
+                    / np.sqrt(((2 * np.pi) ** 2) * np.linalg.det(St))
+                )
+
+                # Only count a measurement as matched when it is plausible under the current Gaussian.
+                if gaussian_likelihood > 1e-8:
+                    matched_measurements.add(idx)
+
+                # Standard EKF update
+                Kt = g['cov'] @ Ht.T @ St_inv
+                new_mean = g['mean'] + Kt @ y
+                new_cov = (np.eye(4) - Kt @ Ht) @ g['cov']
+                new_cov = 0.5 * (new_cov + new_cov.T)
+
                 new_gaussians.append({
                     'mean': new_mean,
                     'cov': new_cov,
-                    'weight': g['weight'] * likelihood # Simplified weight update
+                    'weight': g['weight'] * gaussian_likelihood,
                 })
-                
-        # 2. Birth new Gaussians for unassociated measurements
-        # TODO: Check if any measurement 'z' was not well-matched. 
-        # If so, create a new Gaussian with high covariance.
-        
+
+        # 2. Birth new Gaussians for unassociated measurements.
+        for idx, z in enumerate(measurements):
+            if idx in matched_measurements:
+                continue
+
+            d, beta = z
+            px = d * np.cos(beta)
+            py = d * np.sin(beta)
+            new_gaussians.append({
+                'mean': np.array([px, py, 0.0, 0.0]),
+                'cov': np.diag([1.0, 1.0, 10.0, 10.0]),
+                'weight': 1.0,
+            })
+
         self.gaussians = new_gaussians
         self._prune_and_merge()
 
@@ -139,10 +167,41 @@ class GMPHDTracker:
         """
         # 1. Pruning
         self.gaussians = [g for g in self.gaussians if g['weight'] > self.prune_thresh]
-        
+
         # 2. Merging (Simplified)
-        # TODO: If two Gaussians have means closer than self.merge_thresh, merge them.
-        
+        # Merge Gaussians that are spatially close so the mixture does not explode
+        # with many nearly identical components tracking the same target.
+        merged = []
+        used = set()
+
+        for i, g in enumerate(self.gaussians):
+            if i in used:
+                continue
+            merged_g = g.copy()
+
+            for j in range(i + 1, len(self.gaussians)):
+                if j in used:
+                    continue
+                h = self.gaussians[j]
+                dist = np.linalg.norm(merged_g['mean'][:2] - h['mean'][:2])
+
+                if dist < self.merge_thresh:
+                    total_weight = merged_g['weight'] + h['weight']
+                    merged_g['mean'] = (
+                        merged_g['weight'] * merged_g['mean']
+                        + h['weight'] * h['mean']
+                    ) / total_weight
+                    merged_g['cov'] = (
+                        merged_g['weight'] * merged_g['cov']
+                        + h['weight'] * h['cov']
+                    ) / total_weight
+                    merged_g['weight'] = total_weight
+                    used.add(j)
+
+            merged.append(merged_g)
+
+        self.gaussians = merged
+
         # 3. Cap maximum components
         if len(self.gaussians) > self.max_components:
             # Sort by weight and keep top N
