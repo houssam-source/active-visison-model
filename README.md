@@ -4,10 +4,11 @@ This repository contains a lightweight active-vision and tracking prototype buil
 
 ## Project Overview
 
-The project combines two main responsibilities:
+The project combines camera geometry, multi-target tracking, and active-view planning:
 
 1. Camera calibration and distortion correction for image geometry.
 2. Multi-target tracking using a simplified Gaussian-mixture PHD approach in polar coordinates.
+3. Spatiotemporal neighbor beliefs and uncertainty-guided heading selection.
 
 The overall workflow is:
 
@@ -15,7 +16,8 @@ The overall workflow is:
 - the tracker predicts target motion in a 4D state space,
 - measurements are converted from Cartesian to polar form,
 - an extended Kalman filter updates each Gaussian component,
-- weak/duplicate components are pruned and merged to keep the mixture manageable.
+- weak/duplicate components are pruned and merged to keep the mixture manageable,
+- the uncertainty model builds a grid, and a heading planner selects a candidate field of view with high remaining uncertainty.
 
 ## Architecture
 
@@ -54,12 +56,64 @@ Unmatched measurements are initialized as new Gaussian components with larger un
 #### Pruning and merging
 The tracker removes weak components and merges nearby ones to keep the number of Gaussians bounded and avoid exponential growth.
 
+### 4. Neighbor Beliefs and Uncertainty
+`GPNeighborBelief.py` provides a spatiotemporal Gaussian-process belief using a Matérn 3/2 kernel. `GPNeighborBelief` stores labeled observations and predicts a mean and uncertainty at a queried position and time.
+
+`UncertaintyQuantifier` creates a 2D coordinate grid and computes an uncertainty matrix from a list of GP-like objects. Its inputs implement `prune_old_data(t_now)` and `predict(x, y, t_now)`. The field-of-view mask uses a 90-degree cone and the configured sensor range.
+
+### 5. Heading Selection
+`tsp_alg.py` contains `TSPHeadingPlanner`. Despite the module name, this is a discrete heading search, not a traveling-salesperson route optimizer. It scores candidate headings by summing uncertainty values inside the corresponding field of view and returns the selected heading and score. It accepts the uncertainty matrix and coordinate grids produced by `UncertaintyQuantifier`.
+
+Example:
+
+```python
+from GPNeighborBelief import UncertaintyQuantifier
+from tsp_alg import TSPHeadingPlanner
+
+quantifier = UncertaintyQuantifier(max_fov_range=8.0)
+uncertainty = quantifier.compute_UNC_matrix(gp_models, uav_heading, t_now)
+planner = TSPHeadingPlanner(max_fov_range=quantifier.max_fov_range)
+next_heading, reward = planner.select_best_heading(
+	uncertainty,
+	quantifier.X_grid,
+	quantifier.Y_grid,
+	current_heading=uav_heading,
+)
+```
+
+`gp_models` is a list of objects implementing the prediction and pruning methods described above. The heading planner prefers the current heading when candidate rewards tie, avoiding unnecessary heading changes.
+
 ## File structure
 
 - `bounding_box.py` – helper functions related to region and object boundaries.
 - `distortion_correction.py` – distortion compensation and camera coordinate utilities.
 - `GMHPHDtracker.py` – Gaussian-mixture PHD tracking implementation.
-- `test_distortion_correction.py` – validation tests for the distortion-correction logic.
+- `GPNeighborBelief.py` – spatiotemporal GP belief and uncertainty-grid implementation.
+- `tsp_alg.py` – uncertainty-scored candidate heading planner.
+- `test_distortion_correction.py` – camera geometry tests.
+- `test_gmphdtracker.py` – tracker update, merging, and input-validation tests.
+- `test_tsp_alg.py` – heading selection and uncertainty-grid integration tests.
+- `Mockgp.py` – standalone uncertainty-grid behavior tests using a mock GP.
+
+## Setup and Tests
+
+The project requires Python and NumPy. Install NumPy in the active environment with:
+
+```sh
+python -m pip install numpy
+```
+
+Run the discoverable tests with Python's built-in `unittest` runner:
+
+```sh
+python -m unittest discover -v
+```
+
+Run the standalone uncertainty-grid checks with:
+
+```sh
+python Mockgp.py
+```
 
 ## Notes on the implementation
 

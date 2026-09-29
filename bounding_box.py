@@ -12,6 +12,11 @@ class MonocularLocator:
         self.r = drone_radius
         self.k1 = k1
         self.k2 = k2
+        parameters = np.array([fx, fy, cx, cy, drone_radius, k1, k2], dtype=float)
+        if not np.isfinite(parameters).all():
+            raise ValueError("Camera parameters and drone_radius must be finite")
+        if fx <= 0 or fy <= 0 or drone_radius <= 0:
+            raise ValueError("Focal lengths and drone_radius must be positive")
 
     def correct_distortion(self, x, y):
         """

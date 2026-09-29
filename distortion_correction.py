@@ -11,6 +11,11 @@ class DistortionCorrector:
         self.cy = float(cy)
         self.k1 = float(k1)
         self.k2 = float(k2)
+        parameters = np.array([self.fx, self.fy, self.cx, self.cy, self.k1, self.k2])
+        if not np.isfinite(parameters).all():
+            raise ValueError("Camera parameters must be finite")
+        if self.fx <= 0 or self.fy <= 0:
+            raise ValueError("Focal lengths must be positive")
 
     def correct(self, x, y):
         """Apply radial polynomial distortion correction to one pixel."""
@@ -43,6 +48,8 @@ class MonocularLocator(DistortionCorrector):
     def __init__(self, fx, fy, cx, cy, drone_radius, k1=0.0, k2=0.0):
         super().__init__(fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2)
         self.r = float(drone_radius)
+        if not np.isfinite(self.r) or self.r <= 0:
+            raise ValueError("drone_radius must be finite and positive")
 
     def correct_distortion(self, x, y):
         return self.correct(x, y)

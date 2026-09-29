@@ -44,6 +44,8 @@ class GMPHDTracker:
         ego_velocity: 2x1 array [v_x_uav, v_y_uav] (Your drone's velocity)
         """
         ego_velocity = np.asarray(ego_velocity, dtype=float).reshape(-1)
+        if ego_velocity.size != 2 or not np.isfinite(ego_velocity).all():
+            raise ValueError("ego_velocity must contain two finite values")
         u_t = self.Ct @ ego_velocity
 
         for g in self.gaussians:
@@ -90,10 +92,12 @@ class GMPHDTracker:
         Updates the Gaussian mixture using new polar measurements [d, beta].
         measurements: List of 2x1 arrays.
         """
-        if not measurements:
+        if len(measurements) == 0:
             return
 
         measurements = [np.asarray(m, dtype=float).reshape(2) for m in measurements]
+        if any(not np.isfinite(z).all() or z[0] <= 0 for z in measurements):
+            raise ValueError("Measurements must contain finite values and positive ranges")
         new_gaussians = []
         matched_measurements = set()
 
@@ -101,10 +105,9 @@ class GMPHDTracker:
         # Without this check, the same observation can be re-used as a birth candidate
         # on every iteration, causing duplicate newborn components and unstable PHD growth.
         for g in self.gaussians:
+            if np.linalg.norm(g['mean'][:2]) < 1e-6:
+                continue
             for idx, z in enumerate(measurements):
-                if idx in matched_measurements:
-                    continue
-
                 Ht = self._get_jacobian(g['mean'])
                 z_pred = self._observation_model(g['mean'])
 
@@ -115,14 +118,20 @@ class GMPHDTracker:
 
                 # Innovation Covariance
                 St = Ht @ g['cov'] @ Ht.T + self.Rt
-                if np.linalg.det(St) <= 1e-12:
+                St = 0.5 * (St + St.T)
+                sign, logdet = np.linalg.slogdet(St)
+                if sign <= 0:
                     continue
 
-                # Use the inverse covariance directly for the Gaussian likelihood.
-                St_inv = np.linalg.inv(St)
-                gaussian_likelihood = (
-                    np.exp(-0.5 * y.T @ St_inv @ y)
-                    / np.sqrt(((2 * np.pi) ** 2) * np.linalg.det(St))
+                try:
+                    solved_innovation = np.linalg.solve(St, y)
+                    solved_cross_covariance = np.linalg.solve(St, Ht @ g['cov'])
+                except np.linalg.LinAlgError:
+                    continue
+
+                mahalanobis_sq = y.T @ solved_innovation
+                gaussian_likelihood = np.exp(
+                    -0.5 * (mahalanobis_sq + len(z) * np.log(2 * np.pi) + logdet)
                 )
 
                 # Only count a measurement as matched when it is plausible under the current Gaussian.
@@ -130,9 +139,13 @@ class GMPHDTracker:
                     matched_measurements.add(idx)
 
                 # Standard EKF update
-                Kt = g['cov'] @ Ht.T @ St_inv
+                Kt = solved_cross_covariance.T
                 new_mean = g['mean'] + Kt @ y
-                new_cov = (np.eye(4) - Kt @ Ht) @ g['cov']
+                identity_minus_kh = np.eye(4) - Kt @ Ht
+                new_cov = (
+                    identity_minus_kh @ g['cov'] @ identity_minus_kh.T
+                    + Kt @ self.Rt @ Kt.T
+                )
                 new_cov = 0.5 * (new_cov + new_cov.T)
 
                 new_gaussians.append({
@@ -186,15 +199,19 @@ class GMPHDTracker:
                 dist = np.linalg.norm(merged_g['mean'][:2] - h['mean'][:2])
 
                 if dist < self.merge_thresh:
-                    total_weight = merged_g['weight'] + h['weight']
-                    merged_g['mean'] = (
-                        merged_g['weight'] * merged_g['mean']
-                        + h['weight'] * h['mean']
-                    ) / total_weight
+                    weight_g = merged_g['weight']
+                    weight_h = h['weight']
+                    total_weight = weight_g + weight_h
+                    mean_g = merged_g['mean']
+                    mean_h = h['mean']
+                    mean = (weight_g * mean_g + weight_h * mean_h) / total_weight
+                    delta_g = mean_g - mean
+                    delta_h = mean_h - mean
                     merged_g['cov'] = (
-                        merged_g['weight'] * merged_g['cov']
-                        + h['weight'] * h['cov']
+                        weight_g * (merged_g['cov'] + np.outer(delta_g, delta_g))
+                        + weight_h * (h['cov'] + np.outer(delta_h, delta_h))
                     ) / total_weight
+                    merged_g['mean'] = mean
                     merged_g['weight'] = total_weight
                     used.add(j)
 
