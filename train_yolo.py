@@ -48,19 +48,33 @@ class RecallAwareEarlyStopping:
         scale = max(abs(sum(values) / len(values)), 1e-8) if relative else 1.0
         return spread <= tolerance * scale
 
+    @staticmethod
+    def _to_float(value):
+        if hasattr(value, "detach"):
+            value = value.detach().cpu()
+        if hasattr(value, "item"):
+            value = value.item()
+        return float(value)
+
     def __call__(self, trainer):
         metrics = trainer.metrics or {}
         if RECALL_KEY not in metrics:
             return
 
-        loss_values = torch.as_tensor(trainer.tloss).detach().cpu().flatten().tolist()
-        loss_names = list(getattr(trainer, "loss_names", []))
-        if len(loss_names) != len(loss_values):
-            loss_names = [f"loss_{index}" for index in range(len(loss_values))]
-
-        train_losses = {
-            name: float(value) for name, value in zip(loss_names, loss_values)
-        }
+        raw_losses = trainer.tloss
+        if isinstance(raw_losses, dict):
+            train_losses = {
+                str(name): self._to_float(value)
+                for name, value in raw_losses.items()
+            }
+        else:
+            loss_values = torch.as_tensor(raw_losses).detach().cpu().flatten().tolist()
+            loss_names = list(getattr(trainer, "loss_names", []))
+            if len(loss_names) != len(loss_values):
+                loss_names = [f"loss_{index}" for index in range(len(loss_values))]
+            train_losses = {
+                name: float(value) for name, value in zip(loss_names, loss_values)
+            }
         val_losses = {
             key: float(value)
             for key, value in metrics.items()
