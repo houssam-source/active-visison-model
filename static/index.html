@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171b19">
+  <title>Fieldline | Drone Perception</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171b19;
+      --ink-soft: #252a27;
+      --paper: #f0f0e9;
+      --panel: #fbfbf7;
+      --line: #d8dad1;
+      --muted: #70776f;
+      --acid: #d9f552;
+      --orange: #ec6543;
+      --teal: #087d70;
+      --red: #bc4737;
+      --shadow: 0 18px 42px rgba(20, 25, 21, .08);
+      font-family: "Bahnschrift", "DIN Alternate", "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .mono { font-family: Consolas, "SFMono-Regular", monospace; }
+
+    .topbar {
+      min-height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 32px;
+      background: var(--ink);
+      color: #f5f6ed;
+      border-bottom: 3px solid var(--acid);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-size: 14px; font-weight: 800; letter-spacing: .08em; }
+    .brand-mark { width: 28px; height: 28px; position: relative; display: grid; place-items: center; border: 1px solid var(--acid); transform: rotate(45deg); }
+    .brand-mark::after { content: ""; width: 8px; height: 8px; background: var(--acid); }
+    .brand-name { transform: none; }
+    .topbar-right { display: flex; align-items: center; gap: 24px; }
+    .top-link { color: #c0c7be; text-decoration: none; font-size: 12px; text-transform: uppercase; letter-spacing: .12em; }
+    .top-link:hover { color: var(--acid); }
+    .service-state { display: inline-flex; align-items: center; gap: 8px; color: #d8ded6; font: 11px Consolas, monospace; text-transform: uppercase; letter-spacing: .06em; }
+    .state-dot { width: 8px; height: 8px; border-radius: 50%; background: #747b73; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+    .state-dot.ready { background: var(--acid); box-shadow: 0 0 0 3px rgba(217,245,82,.14); }
+    .state-dot.error { background: var(--orange); }
+
+    main { max-width: 1520px; margin: 0 auto; padding: 30px 32px 64px; }
+    .page-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 22px; }
+    .eyebrow { color: var(--teal); font: 11px Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 7px 0 0; font-size: clamp(27px, 3vw, 38px); line-height: 1; letter-spacing: 0; font-weight: 760; }
+    .model-chip { display: inline-flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-soft); font: 11px Consolas, monospace; }
+    .model-chip::before { content: ""; width: 7px; height: 7px; background: var(--orange); border-radius: 50%; }
+
+    .console-grid { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 18px; align-items: stretch; }
+    .controls { background: var(--ink); color: #f4f5ec; padding: 22px; box-shadow: var(--shadow); }
+    .section-tag { color: var(--acid); font: 10px Consolas, monospace; letter-spacing: .13em; text-transform: uppercase; }
+    .control-title { margin: 8px 0 23px; font-size: 19px; font-weight: 700; }
+    .control-block { padding: 17px 0; border-top: 1px solid #3c423e; }
+    .api-origin-input { width: 100%; min-height: 38px; margin-top: 10px; padding: 0 9px; border: 1px solid #59615a; outline: none; background: #202522; color: #f5f6ed; font: 10px Consolas, monospace; }
+    .api-origin-input:focus { border-color: var(--acid); }
+    .connect-button { min-height: 34px; margin-top: 8px; padding: 0 10px; border: 1px solid #687068; background: transparent; color: var(--acid); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .connect-button:hover { border-color: var(--acid); }
+    .control-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 650; }
+    .control-hint { color: #a9b0a8; font: 10px Consolas, monospace; margin-top: 7px; }
+    .file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+    .file-button { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 0 12px; background: transparent; border: 1px solid #687068; color: white; text-align: left; }
+    .file-button:hover { border-color: var(--acid); }
+    .file-button strong { color: var(--acid); font-size: 18px; font-weight: 400; }
+    .range-line { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+    input[type="range"] { width: 100%; accent-color: var(--acid); }
+    .range-value { min-width: 43px; color: var(--acid); font: 12px Consolas, monospace; text-align: right; }
+    .check-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 13px; color: #d5d9d2; font-size: 12px; }
+    .check-row input { accent-color: var(--acid); width: 15px; height: 15px; }
+    .primary-button { width: 100%; min-height: 46px; margin-top: 18px; border: 0; background: var(--acid); color: var(--ink); font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    .primary-button:hover:not(:disabled) { background: #e7ff78; }
+    .primary-button:disabled { cursor: wait; opacity: .55; }
+    .secondary-button { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 12px; font-weight: 700; }
+    .secondary-button:hover:not(:disabled) { border-color: var(--ink); }
+    .secondary-button:disabled { opacity: .4; cursor: not-allowed; }
+    .error-box { display: none; margin-top: 14px; padding: 10px; color: #ffd8ce; background: #482a23; border-left: 3px solid var(--orange); font-size: 12px; line-height: 1.4; }
+
+    .workspace { min-width: 0; display: flex; flex-direction: column; background: var(--panel); box-shadow: var(--shadow); }
+    .workspace-head { min-height: 54px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); }
+    .workspace-name { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; }
+    .workspace-name::before { content: ""; width: 9px; height: 9px; background: var(--orange); }
+    .frame-meta { color: var(--muted); font: 10px Consolas, monospace; text-align: right; }
+    .dropzone { position: relative; display: grid; flex: 1; min-height: 440px; place-items: center; padding: 24px; overflow: hidden; background-color: #e7e8e0; background-image: linear-gradient(rgba(34,43,37,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(34,43,37,.035) 1px, transparent 1px); background-size: 24px 24px; }
+    .dropzone.dragging { outline: 3px solid var(--teal); outline-offset: -7px; }
+    .empty-state { display: grid; justify-items: center; gap: 12px; color: var(--muted); text-align: center; }
+    .target-mark { width: 60px; height: 60px; position: relative; border: 1px solid #a9afa5; border-radius: 50%; }
+    .target-mark::before, .target-mark::after { content: ""; position: absolute; background: #a9afa5; }
+    .target-mark::before { left: 50%; top: -8px; bottom: -8px; width: 1px; }
+    .target-mark::after { top: 50%; left: -8px; right: -8px; height: 1px; }
+    .target-core { position: absolute; inset: 18px; z-index: 1; border: 1px solid var(--orange); border-radius: 50%; background: #e7e8e0; }
+    .empty-title { color: var(--ink); font-size: 14px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .empty-subtitle { font: 11px Consolas, monospace; }
+    #overlay { display: none; max-width: 100%; max-height: 68vh; object-fit: contain; background: #151917; box-shadow: 0 14px 30px rgba(0,0,0,.15); }
+    .workspace-foot { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 18px; border-top: 1px solid var(--line); }
+    .foot-note { color: var(--muted); font: 10px Consolas, monospace; }
+    .action-group { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .results-section { margin-top: 34px; }
+    .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; padding-bottom: 11px; border-bottom: 1px solid #bfc4b9; }
+    .section-heading h2 { margin: 0; font-size: 19px; }
+    .section-heading span { color: var(--muted); font: 10px Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; }
+    .result-summary { min-height: 120px; display: flex; align-items: center; gap: 22px; border-bottom: 1px solid var(--line); }
+    .result-count { color: var(--teal); font-size: 54px; line-height: 1; font-weight: 760; }
+    .result-label { font-size: 13px; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
+    .result-sub { margin-top: 7px; color: var(--muted); font: 11px Consolas, monospace; }
+    .detection-table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { padding: 11px 12px; color: var(--muted); font: 10px Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--line); }
+    td { padding: 12px; font-size: 12px; border-bottom: 1px solid #e6e7e0; }
+    tbody tr:hover { background: #f2f4e7; }
+    .class-cell { font-weight: 760; }
+    .confidence-track { display: inline-block; width: 72px; height: 5px; margin-right: 8px; vertical-align: middle; background: #e0e2d9; }
+    .confidence-fill { display: block; height: 100%; background: var(--teal); }
+    .empty-row { padding: 20px 12px; color: var(--muted); font: 11px Consolas, monospace; }
+
+    .metrics-section { margin-top: 38px; }
+    .metrics-topline { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+    .metrics-topline h2 { margin: 0; font-size: 19px; }
+    .run-label { color: var(--muted); font: 10px Consolas, monospace; text-align: right; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #bfc4b9; border-bottom: 1px solid #bfc4b9; }
+    .metric { padding: 15px 16px 16px 0; }
+    .metric + .metric { padding-left: 16px; border-left: 1px solid var(--line); }
+    .metric-label { color: var(--muted); font: 10px Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; }
+    .metric-value { margin-top: 8px; font-size: 28px; font-weight: 760; font-variant-numeric: tabular-nums; }
+    .metric-unit { margin-left: 3px; color: var(--muted); font-size: 12px; font-weight: 500; }
+    .charts-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr); gap: 26px; margin-top: 22px; }
+    .chart-panel { min-width: 0; }
+    .chart-head { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font: 10px Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; }
+    .chart-legend { display: flex; gap: 14px; text-transform: none; letter-spacing: 0; }
+    .legend-dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--teal); }
+    .legend-dot.lime { background: #93a91e; }
+    .chart-canvas { display: block; width: 100%; height: 190px; margin-top: 8px; }
+    .class-table td, .class-table th { padding-left: 0; }
+    .class-recall-bar { min-width: 96px; }
+    .inline-bar { width: 100%; height: 5px; background: #e1e3db; }
+    .inline-bar > span { display: block; height: 100%; background: var(--orange); }
+    .metrics-empty { padding: 18px 0; color: var(--muted); font: 11px Consolas, monospace; }
+
+    .toast { position: fixed; right: 22px; bottom: 22px; z-index: 10; max-width: min(390px, calc(100vw - 44px)); padding: 13px 16px; color: #fff; background: var(--ink); border-left: 4px solid var(--acid); box-shadow: var(--shadow); font-size: 13px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .loading::after { content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 9px; border: 2px solid rgba(23,27,25,.28); border-top-color: var(--ink); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 920px) {
+      main { padding: 24px 20px 48px; }
+      .console-grid { grid-template-columns: 248px minmax(0, 1fr); }
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .topbar { padding: 0 16px; }
+      .topbar-right { gap: 12px; }
+      .top-link { display: none; }
+      main { padding: 22px 14px 40px; }
+      .page-heading { align-items: start; flex-direction: column; }
+      .console-grid { grid-template-columns: 1fr; }
+      .controls { order: 2; }
+      .workspace { order: 1; }
+      .dropzone { min-height: 320px; }
+      .workspace-foot { align-items: start; flex-direction: column; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric:nth-child(3) { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+      .metric:nth-child(4) { border-top: 1px solid var(--line); }
+      .metric:nth-child(n+3) { padding-top: 14px; }
+      .result-summary { min-height: 98px; }
+      .frame-meta { max-width: 45%; overflow-wrap: anywhere; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">FIELDLINE <span style="color:var(--acid)">/</span> PERCEPTION</span></div>
+    <div class="topbar-right">
+      <a class="top-link" href="#inspect">Inspect</a>
+      <a class="top-link" href="#metrics">Model metrics</a>
+      <div class="service-state"><span id="serviceDot" class="state-dot"></span><span id="serviceText">Connecting</span></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-heading">
+      <div>
+        <div class="eyebrow">Embodied AI / Sensor station 01</div>
+        <h1>Image inspection</h1>
+      </div>
+      <div id="modelChip" class="model-chip">Loading checkpoint metadata</div>
+    </div>
+
+    <section id="inspect" class="console-grid" aria-label="Image detection console">
+      <aside class="controls">
+        <div class="section-tag">Inference controls</div>
+        <div class="control-title">Frame setup</div>
+
+        <div class="control-block" style="border-top:0;padding-top:0">
+          <div class="control-label"><label for="apiOrigin">Inference API URL</label></div>
+          <input id="apiOrigin" class="api-origin-input" type="url" inputmode="url" placeholder="https://your-api-host.example.com" autocomplete="url">
+          <button id="connectApi" class="connect-button" type="button">Connect backend</button>
+          <div class="control-hint">Vercel hosts this UI; point it to your Python API.</div>
+        </div>
+
+        <div class="control-block" style="border-top:0;padding-top:0">
+          <div class="control-label"><label for="imageInput">Source image</label><span class="mono" style="color:var(--acid)">RGB</span></div>
+          <input id="imageInput" class="file-input" type="file" accept="image/*">
+          <button id="chooseButton" class="file-button" type="button"><span id="fileName">Choose image</span><strong aria-hidden="true">+</strong></button>
+          <div class="control-hint">JPG / PNG / WEBP / max 20 MB</div>
+        </div>
+
+        <div class="control-block">
+          <div class="control-label"><label for="confidence">Confidence threshold</label><span id="confidenceValue" class="range-value">0.25</span></div>
+          <div class="range-line"><input id="confidence" type="range" min="0.05" max="0.90" step="0.01" value="0.25"><span class="mono" style="color:#9fa79e;font-size:10px">0.90</span></div>
+          <div class="control-hint">Lower threshold can increase recall and false positives.</div>
+        </div>
+
+        <div class="control-block">
+          <div class="control-label">Overlay</div>
+          <label class="check-row" for="showLabels"><span>Class labels</span><input id="showLabels" type="checkbox" checked></label>
+          <label class="check-row" for="showConfidence"><span>Confidence values</span><input id="showConfidence" type="checkbox" checked></label>
+        </div>
+
+        <button id="detectButton" class="primary-button" type="button" disabled>Run detection</button>
+        <div id="errorBox" class="error-box" role="alert"></div>
+
+        <div class="control-block" style="margin-top:18px">
+          <div class="control-label">Active checkpoint</div>
+          <div id="checkpointPath" class="control-hint" style="overflow-wrap:anywhere">Loading...</div>
+          <div id="classNames" class="control-hint" style="margin-top:10px">Classes: loading</div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <div class="workspace-head">
+          <div class="workspace-name">Detection viewport</div>
+          <div id="imageMeta" class="frame-meta">NO FRAME</div>
+        </div>
+        <div id="dropzone" class="dropzone">
+          <div id="emptyState" class="empty-state">
+            <div class="target-mark" aria-hidden="true"><span class="target-core"></span></div>
+            <div class="empty-title">No frame loaded</div>
+            <div class="empty-subtitle">Waiting for image source</div>
+          </div>
+          <canvas id="overlay" aria-label="Image with detection boxes"></canvas>
+        </div>
+        <div class="workspace-foot">
+          <div id="inferenceStatus" class="foot-note">READY / AWAITING INPUT</div>
+          <div class="action-group">
+            <button id="downloadImage" class="secondary-button" type="button" disabled>Save annotated image</button>
+            <button id="downloadJson" class="secondary-button" type="button" disabled>Export JSON</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="results-section" aria-labelledby="resultsTitle">
+      <div class="section-heading"><h2 id="resultsTitle">Frame detections</h2><span id="resultFilename">No inference yet</span></div>
+      <div class="result-summary">
+        <div id="resultCount" class="result-count">--</div>
+        <div><div class="result-label">Objects detected</div><div id="resultDetails" class="result-sub">Run an image through the active checkpoint</div></div>
+      </div>
+      <div class="detection-table-wrap">
+        <table>
+          <thead><tr><th>Class</th><th>Confidence</th><th>Box coordinates (x1, y1, x2, y2)</th><th>Center (x, y)</th></tr></thead>
+          <tbody id="detectionRows"><tr><td class="empty-row" colspan="4">No detections to display.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="metrics" class="metrics-section" aria-labelledby="metricsTitle">
+      <div class="metrics-topline"><div><div class="eyebrow">Training record</div><h2 id="metricsTitle" style="margin:6px 0 0;font-size:19px">Validation performance</h2></div><div id="runLabel" class="run-label">Checking local run history</div></div>
+      <div class="metric-grid">
+        <div class="metric"><div class="metric-label">Precision</div><div id="metricPrecision" class="metric-value">--<span class="metric-unit">%</span></div></div>
+        <div class="metric"><div class="metric-label">Recall</div><div id="metricRecall" class="metric-value">--<span class="metric-unit">%</span></div></div>
+        <div class="metric"><div class="metric-label">mAP @ 0.50</div><div id="metricMap50" class="metric-value">--<span class="metric-unit">%</span></div></div>
+        <div class="metric"><div class="metric-label">mAP @ 0.50:0.95</div><div id="metricMap5095" class="metric-value">--<span class="metric-unit">%</span></div></div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="chart-panel">
+          <div class="chart-head"><span>Recall / mAP by epoch</span><span class="chart-legend"><span><i class="legend-dot"></i>Recall</span><span><i class="legend-dot lime"></i>mAP50</span></span></div>
+          <canvas id="metricChart" class="chart-canvas" aria-label="Recall and mAP50 by epoch"></canvas>
+          <div id="metricsEmpty" class="metrics-empty" style="display:none">No local training results found.</div>
+        </div>
+        <div class="chart-panel">
+          <div class="chart-head"><span>Per-class validation</span><span>Recall</span></div>
+          <div class="detection-table-wrap">
+            <table class="class-table"><thead><tr><th>Class</th><th>Objects</th><th>Recall</th></tr></thead><tbody id="classRows"><tr><td class="empty-row" colspan="3">No class report found.</td></tr></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script>
+    (() => {
+      const byId = (id) => document.getElementById(id);
+      const input = byId("imageInput");
+      const canvas = byId("overlay");
+      const context = canvas.getContext("2d");
+      const dropzone = byId("dropzone");
+      let currentFile = null;
+      let currentImage = null;
+      let currentFilename = "";
+      let lastResponse = null;
+      let toastTimer = null;
+      const savedApiBase = localStorage.getItem("fieldline-api-base");
+      const localHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+      let apiBase = (savedApiBase || (localHost ? window.location.origin : "")).replace(/\/+$/, "");
+
+      function apiUrl(path) {
+        if (!apiBase) throw new Error("Set and connect the Python inference API URL first.");
+        return `${apiBase}${path}`;
+      }
+
+      function showToast(message) {
+        const toast = byId("toast");
+        toast.textContent = message;
+        toast.classList.add("visible");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("visible"), 2800);
+      }
+
+      function setServiceState(state, text) {
+        byId("serviceDot").className = `state-dot ${state}`;
+        byId("serviceText").textContent = text;
+      }
+
+      function setError(message) {
+        const box = byId("errorBox");
+        box.textContent = message || "";
+        box.style.display = message ? "block" : "none";
+      }
+
+      function chooseFile(file) {
+        if (!file) return;
+        if (!file.type.startsWith("image/")) {
+          setError("Select a supported image file.");
+          return;
+        }
+        if (file.size > 20 * 1024 * 1024) {
+          setError("Image exceeds the 20 MB upload limit.");
+          return;
+        }
+        setError("");
+        currentFile = file;
+        currentFilename = file.name;
+        byId("fileName").textContent = file.name;
+        byId("inferenceStatus").textContent = "IMAGE LOADED / READY FOR INFERENCE";
+        byId("resultFilename").textContent = file.name;
+        const image = new Image();
+        image.onload = () => {
+          currentImage = image;
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          canvas.style.display = "block";
+          byId("emptyState").style.display = "none";
+          byId("detectButton").disabled = false;
+          byId("downloadImage").disabled = false;
+          byId("imageMeta").textContent = `${image.naturalWidth} x ${image.naturalHeight} / ${formatBytes(file.size)}`;
+          lastResponse = null;
+          byId("downloadJson").disabled = true;
+          byId("resultCount").textContent = "--";
+          byId("resultDetails").textContent = "Image ready; no inference run yet";
+          clearDetectionTable();
+          renderOverlay([]);
+          if (image.src.startsWith("blob:")) URL.revokeObjectURL(image.src);
+        };
+        image.onerror = () => setError("The selected image could not be decoded.");
+        image.src = URL.createObjectURL(file);
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      function formatNumber(value, digits = 1) {
+        return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "--";
+      }
+
+      function renderOverlay(detections) {
+        if (!currentImage) return;
+        const width = canvas.width;
+        const height = canvas.height;
+        context.clearRect(0, 0, width, height);
+        context.drawImage(currentImage, 0, 0, width, height);
+        const lineWidth = Math.max(2, Math.min(width, height) * 0.003);
+        context.lineWidth = lineWidth;
+        context.font = `600 ${Math.max(12, Math.min(width, height) * 0.024)}px Bahnschrift, Segoe UI, sans-serif`;
+        context.textBaseline = "top";
+
+        for (const detection of detections) {
+          const [x1, y1, x2, y2] = detection.bbox;
+          const boxWidth = x2 - x1;
+          const boxHeight = y2 - y1;
+          context.strokeStyle = "#d9f552";
+          context.fillStyle = "rgba(217, 245, 82, 0.08)";
+          context.fillRect(x1, y1, boxWidth, boxHeight);
+          context.strokeRect(x1, y1, boxWidth, boxHeight);
+
+          if (byId("showLabels").checked || byId("showConfidence").checked) {
+            const pieces = [];
+            if (byId("showLabels").checked) pieces.push(detection.class_name);
+            if (byId("showConfidence").checked) pieces.push(`${(detection.confidence * 100).toFixed(0)}%`);
+            const label = pieces.join("  /  ");
+            const textWidth = context.measureText(label).width;
+            const textHeight = Math.max(22, Math.min(width, height) * 0.038);
+            const top = y1 - textHeight - 2 >= 0 ? y1 - textHeight - 2 : y1 + lineWidth;
+            context.fillStyle = "#d9f552";
+            context.fillRect(x1, top, textWidth + 12, textHeight);
+            context.fillStyle = "#171b19";
+            context.fillText(label, x1 + 6, top + 3);
+          }
+        }
+      }
+
+      function clearDetectionTable() {
+        byId("detectionRows").innerHTML = '<tr><td class="empty-row" colspan="4">No detections to display.</td></tr>';
+      }
+
+      function renderDetections(detections, response) {
+        byId("resultCount").textContent = String(detections.length).padStart(2, "0");
+        byId("resultDetails").textContent = `${response.width} x ${response.height} pixels / threshold ${Number(byId("confidence").value).toFixed(2)}`;
+        byId("resultFilename").textContent = response.filename;
+        byId("inferenceStatus").textContent = `INFERENCE COMPLETE / ${detections.length} OBJECT${detections.length === 1 ? "" : "S"}`;
+        if (!detections.length) {
+          byId("detectionRows").innerHTML = '<tr><td class="empty-row" colspan="4">No objects passed the current confidence threshold.</td></tr>';
+          return;
+        }
+
+        byId("detectionRows").replaceChildren(...detections.map((detection) => {
+          const row = document.createElement("tr");
+          const confidence = Math.max(0, Math.min(100, detection.confidence * 100));
+          const cells = [
+            `<span class="class-cell">${escapeHtml(detection.class_name)}</span><span class="mono" style="color:#7b8279;margin-left:7px">#${detection.class_id}</span>`,
+            `<span class="confidence-track"><i class="confidence-fill" style="width:${confidence}%"></i></span><span class="mono">${confidence.toFixed(1)}%</span>`,
+            `<span class="mono">${detection.bbox.map((value) => Math.round(value)).join(", ")}</span>`,
+            `<span class="mono">${detection.center.map((value) => Math.round(value)).join(", ")}</span>`,
+          ];
+          for (const html of cells) {
+            const cell = document.createElement("td");
+            cell.innerHTML = html;
+            row.append(cell);
+          }
+          return row;
+        }));
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        })[character]);
+      }
+
+      async function runDetection() {
+        if (!currentFile) return;
+        const button = byId("detectButton");
+        button.disabled = true;
+        button.classList.add("loading");
+        button.textContent = "Processing";
+        setError("");
+        byId("inferenceStatus").textContent = "INFERENCE RUNNING";
+        const form = new FormData();
+        form.append("file", currentFile);
+        try {
+          const response = await fetch(apiUrl(`/detect?confidence=${encodeURIComponent(byId("confidence").value)}`), { method: "POST", body: form });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.detail || `Request failed (${response.status})`);
+          lastResponse = body;
+          renderOverlay(body.detections);
+          renderDetections(body.detections, body);
+          byId("downloadJson").disabled = false;
+          const modelResponse = await fetch(apiUrl("/model"));
+          if (modelResponse.ok) {
+            const model = await modelResponse.json();
+            if (model.classes.length) byId("classNames").textContent = `Classes: ${model.classes.join(", ")}`;
+            byId("modelChip").textContent = model.loaded ? "MODEL LOADED" : "CHECKPOINT READY";
+          }
+          setServiceState("ready", "MODEL LOADED");
+        } catch (error) {
+          setError(error.message || "Detection request failed.");
+          byId("inferenceStatus").textContent = "INFERENCE FAILED";
+          setServiceState("error", "REQUEST ERROR");
+        } finally {
+          button.disabled = false;
+          button.classList.remove("loading");
+          button.textContent = "Run detection";
+        }
+      }
+
+      function drawMetricChart(history) {
+        const chart = byId("metricChart");
+        const rect = chart.getBoundingClientRect();
+        if (!history.length || rect.width < 2) return;
+        const ratio = window.devicePixelRatio || 1;
+        chart.width = Math.round(rect.width * ratio);
+        chart.height = Math.round(rect.height * ratio);
+        const ctx = chart.getContext("2d");
+        ctx.scale(ratio, ratio);
+        const width = rect.width;
+        const height = rect.height;
+        const pad = { left: 34, right: 12, top: 14, bottom: 23 };
+        const plotWidth = width - pad.left - pad.right;
+        const plotHeight = height - pad.top - pad.bottom;
+        ctx.clearRect(0, 0, width, height);
+        ctx.font = "10px Consolas, monospace";
+        ctx.fillStyle = "#7a8179";
+        ctx.strokeStyle = "#dfe1d9";
+        ctx.lineWidth = 1;
+        for (let tick = 0; tick <= 4; tick++) {
+          const y = pad.top + plotHeight * tick / 4;
+          ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+          ctx.fillText((1 - tick / 4).toFixed(2), 0, y + 3);
+        }
+        const drawLine = (key, color) => {
+          const values = history.map((entry) => Number(entry[key]));
+          ctx.beginPath();
+          values.forEach((value, index) => {
+            const x = pad.left + (values.length <= 1 ? 0 : index / (values.length - 1)) * plotWidth;
+            const y = pad.top + (1 - Math.max(0, Math.min(1, value))) * plotHeight;
+            if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          });
+          ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.stroke();
+        };
+        drawLine("recall", "#087d70");
+        drawLine("map50", "#93a91e");
+        ctx.fillStyle = "#7a8179";
+        ctx.fillText(`EPOCH ${history[0].epoch}`, pad.left, height - 4);
+        ctx.textAlign = "right";
+        ctx.fillText(`${history[history.length - 1].epoch}`, width - pad.right, height - 4);
+        ctx.textAlign = "left";
+      }
+
+      function setMetric(id, value) {
+        byId(id).innerHTML = value == null ? `--<span class="metric-unit">%</span>` : `${(value * 100).toFixed(1)}<span class="metric-unit">%</span>`;
+      }
+
+      function renderMetrics(data) {
+        window.metricHistory = data.history || [];
+        if (!data.available || !data.summary) {
+          byId("metricsEmpty").style.display = "block";
+          byId("runLabel").textContent = "No local results.csv found";
+          return;
+        }
+        byId("metricsEmpty").style.display = "none";
+        byId("runLabel").textContent = `${data.run} / epoch ${data.summary.epoch}`;
+        setMetric("metricPrecision", data.summary.precision);
+        setMetric("metricRecall", data.summary.recall);
+        setMetric("metricMap50", data.summary.map50);
+        setMetric("metricMap5095", data.summary.map5095);
+        drawMetricChart(data.history);
+
+        if (data.classes && data.classes.length) {
+          byId("classRows").replaceChildren(...data.classes.map((item) => {
+            const row = document.createElement("tr");
+            const classCell = document.createElement("td");
+            classCell.textContent = item.class_name;
+            classCell.className = "class-cell";
+            const countCell = document.createElement("td");
+            countCell.textContent = item.instances ?? "--";
+            const recallCell = document.createElement("td");
+            recallCell.className = "class-recall-bar";
+            const value = Number(item.recall) || 0;
+            recallCell.innerHTML = `<span class="mono">${(value * 100).toFixed(1)}%</span><div class="inline-bar"><span style="width:${Math.max(0, Math.min(100, value * 100))}%"></span></div>`;
+            row.append(classCell, countCell, recallCell);
+            return row;
+          }));
+        }
+      }
+
+      async function loadSystemInfo() {
+        if (!apiBase) {
+          setServiceState("error", "API URL NEEDED");
+          byId("modelChip").textContent = "CONNECT INFERENCE API";
+          byId("checkpointPath").textContent = "Enter the deployed Python API URL above.";
+          byId("metricsEmpty").style.display = "block";
+          byId("metricsEmpty").textContent = "Connect a backend to load model status and training metrics.";
+          return;
+        }
+        try {
+          const [healthResponse, modelResponse, metricsResponse] = await Promise.all([
+            fetch(apiUrl("/health")), fetch(apiUrl("/model")), fetch(apiUrl("/metrics")),
+          ]);
+          if (!healthResponse.ok || !modelResponse.ok || !metricsResponse.ok) throw new Error("API status request failed");
+          const [health, model, metrics] = await Promise.all([
+            healthResponse.json(), modelResponse.json(), metricsResponse.json(),
+          ]);
+          setServiceState("ready", health.model_loaded ? "MODEL LOADED" : "API ONLINE");
+          byId("modelChip").textContent = model.checkpoint_exists ? "CHECKPOINT READY" : "CHECKPOINT MISSING";
+          byId("checkpointPath").textContent = model.checkpoint;
+          byId("classNames").textContent = model.classes.length ? `Classes: ${model.classes.join(", ")}` : "Classes load with model";
+          renderMetrics(metrics);
+        } catch (error) {
+          setServiceState("error", "API OFFLINE");
+          byId("modelChip").textContent = "SERVICE UNAVAILABLE";
+          byId("checkpointPath").textContent = "API is not responding";
+          byId("metricsEmpty").style.display = "block";
+          byId("metricsEmpty").textContent = "Start the FastAPI service to load model metrics.";
+        }
+      }
+
+      byId("chooseButton").addEventListener("click", () => input.click());
+      byId("apiOrigin").value = apiBase;
+      byId("connectApi").addEventListener("click", () => {
+        const rawValue = byId("apiOrigin").value.trim().replace(/\/+$/, "");
+        try {
+          const parsed = new URL(rawValue);
+          if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("Use an HTTP or HTTPS URL.");
+          apiBase = parsed.origin;
+          localStorage.setItem("fieldline-api-base", apiBase);
+          byId("apiOrigin").value = apiBase;
+          loadSystemInfo();
+        } catch (error) {
+          setServiceState("error", "INVALID API URL");
+          setError(error.message || "Enter a valid backend URL.");
+        }
+      });
+      input.addEventListener("change", () => chooseFile(input.files[0]));
+      byId("detectButton").addEventListener("click", runDetection);
+      byId("confidence").addEventListener("input", (event) => { byId("confidenceValue").textContent = Number(event.target.value).toFixed(2); });
+      byId("showLabels").addEventListener("change", () => renderOverlay(lastResponse?.detections || []));
+      byId("showConfidence").addEventListener("change", () => renderOverlay(lastResponse?.detections || []));
+      byId("downloadImage").addEventListener("click", () => {
+        if (!currentImage) return;
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = `${currentFilename.replace(/\.[^.]+$/, "") || "frame"}_detections.png`;
+          link.click();
+          URL.revokeObjectURL(link.href);
+        }, "image/png");
+      });
+      byId("downloadJson").addEventListener("click", () => {
+        if (!lastResponse) return;
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(new Blob([JSON.stringify(lastResponse, null, 2)], { type: "application/json" }));
+        link.download = `${currentFilename.replace(/\.[^.]+$/, "") || "frame"}_detections.json`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      });
+      for (const eventName of ["dragenter", "dragover"]) {
+        dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.add("dragging"); });
+      }
+      for (const eventName of ["dragleave", "drop"]) {
+        dropzone.addEventListener(eventName, (event) => { event.preventDefault(); dropzone.classList.remove("dragging"); });
+      }
+      dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.files[0]));
+      window.addEventListener("resize", () => { if (window.metricHistory) drawMetricChart(window.metricHistory); });
+
+      loadSystemInfo();
+    })();
+  </script>
+</body>
+</html>

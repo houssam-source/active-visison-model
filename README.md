@@ -181,14 +181,27 @@ flowchart LR
 
 ### Perception API
 
-Install the API dependencies in the active virtual environment and start the server:
+Install the API dependencies, download the Kaggle T4 checkpoint into the local project, and start the perception GUI/API:
 
 ```sh
 python -m pip install -r requirements-api.txt -r requirements-yolo.txt
+python -m pip install kagglehub
+python download_kaggle_model.py
 python -m uvicorn api_server:app --host 127.0.0.1 --port 8000
 ```
 
-The interactive OpenAPI docs are at `http://127.0.0.1:8000/docs`. `GET /health` reports service/model readiness, `GET /model` reports checkpoint configuration, and `POST /detect` accepts an image upload with an optional `confidence` query parameter. The YOLO checkpoint loads on the first detection request. Set `YOLO_MODEL_PATH` to use a different checkpoint.
+Open `http://127.0.0.1:8000/` for the perception dashboard or `http://127.0.0.1:8000/docs` for the interactive API docs. The dashboard supports image upload/drop, confidence adjustment, annotated detections, JSON/image export, checkpoint status, local epoch metrics, and per-class recall when training reports are present. The API also exposes `GET /health`, `GET /model`, `GET /metrics`, and `POST /detect`. The 30-epoch checkpoint is preferred when present; `YOLO_MODEL_PATH` can select another checkpoint. Configure KaggleHub authentication locally before downloading the Kaggle model.
+
+### Deploy the dashboard to Vercel
+
+Vercel hosts the static dashboard only. Keep `api_server.py`, PyTorch, and the YOLO checkpoint on a Python-capable host; the dashboard cannot load or run those weights inside Vercel's static deployment. Deploy this repository to Vercel with `vercel.json` selecting `static` as the output directory. Deploy the FastAPI service separately, make it reachable over HTTPS, and configure its environment:
+
+```text
+YOLO_MODEL_PATH=/path/to/drone_yolov8n_30ep.pt
+CORS_ORIGINS=https://your-project.vercel.app,http://127.0.0.1:8000,http://localhost:8000
+```
+
+Open the Vercel dashboard, paste the public FastAPI origin into **Inference API URL**, and choose **Connect backend**. The setting is saved in that browser. Use a persistent Python host with sufficient memory for PyTorch/model loading; Vercel serverless functions are not the inference host for this project.
 
 ### Genesis simulation bridge
 
