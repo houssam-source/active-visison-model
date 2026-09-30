@@ -125,10 +125,18 @@ Install the detector dependencies and train from the pretrained YOLOv8 nano chec
 
 ```powershell
 python -m pip install -r requirements-yolo.txt
-python train_yolo.py --epochs 10 --imgsz 640 --batch 8 --device auto
+python train_yolo.py --epochs 30 --imgsz 640 --batch 8 --device auto
 ```
 
-The script evaluates on the configured validation split, writes the full run under `runs/detect/`, and copies its best weights to `models/drone_yolov8n.pt`. `--device auto` selects CUDA when PyTorch can use it and otherwise uses CPU. CPU training on this 7,003-image training split can take a long time; install a CUDA-enabled PyTorch build first to train on a compatible NVIDIA GPU.
+The 30 epochs are a maximum. Custom early stopping begins after epoch 12 and requires six epochs without a recall gain of at least 0.002, plus five stable epochs of training losses and validation losses/scores. The script saves epoch history, plots, a numeric confusion matrix, per-class recall metrics, a text error analysis, and the best checkpoint. `--device auto` selects CUDA when available and otherwise uses CPU.
+
+For Kaggle, run after the dataset extraction cell has written `/kaggle/working/yolo_data.yaml`. Put the repository on the notebook's working path, enable a GPU accelerator if available, and run:
+
+```python
+!python train_yolo.py --data /kaggle/working/yolo_data.yaml --epochs 30 --imgsz 640 --batch 8 --device auto --project /kaggle/working/runs/detect --output-model /kaggle/working/models/drone_yolov8n.pt --name drone_train_30ep
+```
+
+The Kaggle run and its confusion analysis are saved under `/kaggle/working/runs/detect/`; the exported checkpoint is `/kaggle/working/models/drone_yolov8n.pt`. To analyze an existing checkpoint without retraining, add `--analyze-only --model /kaggle/working/models/drone_yolov8n.pt`.
 
 Run one-image detection with the trained checkpoint:
 

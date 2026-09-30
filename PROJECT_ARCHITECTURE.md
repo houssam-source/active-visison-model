@@ -57,9 +57,13 @@ The splits contain 7,003 training images, 2,001 validation images, and 996 test 
 
 `data.yaml` points Ultralytics at those split directories. Its current names (`class_0` through `class_4`) are placeholders. Replace them with the real class names while preserving the class ID order before training if detections should have meaningful names.
 
-`train_yolo.py` starts from the local `yolov8n.pt` weights by default, trains using the dataset config, and copies the best checkpoint to `models/drone_yolov8n.pt`. Ultralytics run artifacts are stored under `runs/detect/`. The script defaults to 10 epochs, 640-pixel images, batch size 8, and automatic device selection.
+`train_yolo.py` starts from the local `yolov8n.pt` weights by default, trains using the dataset config, and copies the best checkpoint to `models/drone_yolov8n.pt`. The maximum is now 30 epochs at 640 pixels and batch size 8. Custom stopping starts after epoch 12 and requires both six epochs without a recall gain of 0.002 and five recent stable epochs across training losses, validation losses, and validation scores. `--project` and `--output-model` let Kaggle runs write persistent outputs under `/kaggle/working`.
 
-**Training status:** The custom model has completed 10 epochs on CPU. The best checkpoint is `models/drone_yolov8n.pt`; the full run and weights are also under `runs/detect/drone_train/`. On the 2,001-image validation split, the best checkpoint reached precision 0.778, recall 0.408, mAP50 0.456, and mAP50-95 0.294. The class names are still placeholders, so replace them with the dataset's real names before presenting predictions to users.
+**Training status:** The existing checkpoint is the 10-epoch CPU baseline. On the 2,001-image validation split, it reached precision 0.778, recall 0.408, mAP50 0.456, and mAP50-95 0.294. The 30-epoch recall-aware run has not been started. The class names remain placeholders; replace them with the dataset's real names before presenting predictions to users.
+
+The baseline confusion matrix is oriented with predicted classes in rows, ground-truth classes in columns, and background as the final row/column. At its 0.25 confidence and 0.45 matching-IoU operating point, it records 1,780 background misses out of 3,019 ground-truth objects (59.0%), versus 78 cross-class assignments (2.6%). Class counts are balanced (583–629 objects each), but matrix recall is lowest for class_3 (0.277) and class_4 (0.289). This points primarily to missed/localization-limited detections rather than confusion between the five classes. Small, blurred, occluded objects, annotation coverage, and confidence threshold are likely areas to inspect; the matrix alone does not prove which one is the cause.
+
+Training and analysis produce `early_stopping_metrics.csv`, `confusion_matrix.csv`, `class_recall_metrics.csv`, and `recall_analysis.txt` in addition to Ultralytics' confusion-matrix and metric plots. Pass `--analyze-only --model <checkpoint>` to generate the confusion report without training.
 
 ## Perception And Detection
 
