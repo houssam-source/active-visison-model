@@ -14,7 +14,7 @@ from yolov3_backbone import YOLOv3TinyPerception
 
 
 class SwarmActiveVisionEnv:
-    def __init__(self, n_drones=3, control_hz=10, gui=False, camera_resolution=(1920, 1080), learning_epochs=10):
+    def __init__(self, n_drones=3, control_hz=10, gui=False, camera_resolution=(640, 480), learning_epochs=10):
         if gs is None:
             raise ImportError("Genesis is required for SwarmActiveVisionEnv. Install genesis-world and its dependencies first.")
 

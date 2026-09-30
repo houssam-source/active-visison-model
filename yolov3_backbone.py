@@ -39,7 +39,7 @@ class YOLOv3TinyPerception:
         if rgb is None or np.size(rgb) == 0:
             return None, 1.0, 1.0
 
-        rgb_array = np.ascontiguousarray(rgb)
+        rgb_array = np.array(rgb, copy=True, order="C")
         if rgb_array.ndim != 3 or rgb_array.shape[2] != 3:
             return None, 1.0, 1.0
         if rgb_array.dtype != np.uint8:

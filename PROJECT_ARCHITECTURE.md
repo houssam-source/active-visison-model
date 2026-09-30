@@ -59,7 +59,7 @@ The splits contain 7,003 training images, 2,001 validation images, and 996 test 
 
 `train_yolo.py` starts from the local `yolov8n.pt` weights by default, trains using the dataset config, and copies the best checkpoint to `models/drone_yolov8n.pt`. Ultralytics run artifacts are stored under `runs/detect/`. The script defaults to 10 epochs, 640-pixel images, batch size 8, and automatic device selection.
 
-**Training status:** The custom training job has not been run yet. The currently selected environment has CPU-only PyTorch (`torch.cuda.is_available()` is false), so a full 10-epoch run over this dataset may take a long time. Until training completes, `models/drone_yolov8n.pt` will not exist.
+**Training status:** The custom model has completed 10 epochs on CPU. The best checkpoint is `models/drone_yolov8n.pt`; the full run and weights are also under `runs/detect/drone_train/`. On the 2,001-image validation split, the best checkpoint reached precision 0.778, recall 0.408, mAP50 0.456, and mAP50-95 0.294. The class names are still placeholders, so replace them with the dataset's real names before presenting predictions to users.
 
 ## Perception And Detection
 
@@ -95,7 +95,7 @@ Despite its module name, `TSPHeadingPlanner` is a local discrete heading search,
 
 ### Multi-drone environment and RL wrapper
 
-`swarmmanager.py` builds a multi-drone Genesis environment with a per-drone detector, tracker, GP belief, uncertainty grid, and heading planner. `ActiveVisionWrapper.py` exposes observations containing per-drone uncertainty and mean grids, plus a Gymnasium-style action and reward interface.
+`swarmmanager.py` builds a multi-drone Genesis environment with a per-drone detector, tracker, GP belief, uncertainty grid, and heading planner. Its default camera resolution is 640 x 480 to reduce rendering and inference load; callers can override `camera_resolution`. The same configured resolution is passed to the detector. `ActiveVisionWrapper.py` exposes observations containing per-drone uncertainty and mean grids, plus a Gymnasium-style action and reward interface.
 
 This path is separate from the single-drone bridge. The environment currently creates detectors with the wrapper's default `yolov8n.pt` checkpoint rather than automatically selecting the custom checkpoint. Also, `ActiveVisionRLWrapper.step(actions)` currently uses the actions to calculate a control-cost term in the reward but does not pass them to the environment or apply them to drone control. Treat this RL interface as a scaffold, not a completed action-controlled training environment.
 
@@ -182,6 +182,6 @@ For a different checkpoint, set `YOLO_MODEL_PATH` before starting the process. T
 - The prepared dataset YAML was accepted by Ultralytics, and all image/label basenames matched across the three splits.
 - The repository's 13 discoverable `unittest` tests pass.
 - A focused smoke check verified RGB-D projection of a centered detection to the expected range/bearing output.
-- The custom YOLO training job and a full Genesis visual simulation have not been run in this environment.
-- No custom-model accuracy metrics are available yet. Run training and evaluate on the held-out test split before relying on detections.
+- The 10-epoch custom YOLO training job completed on CPU; the trained checkpoint loads and produces detections on a validation image.
+- A full Genesis visual simulation and evaluation on the held-out test split have not been run yet.
 - The real semantic class names, RGB/depth metric calibration, multi-drone RL action path, and full closed-loop simulator behavior remain to be confirmed or completed.
