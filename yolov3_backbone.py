@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -7,6 +9,49 @@ try:
     from ultralytics import YOLO
 except ImportError:  # pragma: no cover - handled at runtime for optional environments
     YOLO = None
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+DEFAULT_DETECTOR_MODEL_PATHS = [
+    PROJECT_ROOT / "models" / "drone_yolov8n.pt",
+    PROJECT_ROOT / "models" / "drone_yolov8n_30ep.pt",
+    PROJECT_ROOT / "yolov8n.pt",
+]
+
+
+def resolve_detector_model_path(model_path=None, default_paths=None, env_var="YOLO_MODEL_PATH"):
+    """Resolve the detector checkpoint with explicit > environment > project defaults precedence."""
+    explicit_path = None if model_path is None else str(model_path).strip()
+    env_value = os.getenv(env_var, "").strip()
+
+    if default_paths is None:
+        default_paths = list(DEFAULT_DETECTOR_MODEL_PATHS)
+    else:
+        default_paths = [Path(path).expanduser() for path in default_paths]
+
+    if explicit_path:
+        explicit_path_obj = Path(explicit_path).expanduser()
+        if not explicit_path_obj.is_file():
+            raise FileNotFoundError(
+                f"Detector checkpoint not found: {explicit_path_obj}. "
+                "Set YOLO_MODEL_PATH or provide a valid model path."
+            )
+        return explicit_path_obj.resolve()
+
+    if env_value:
+        env_path = Path(env_value).expanduser()
+        if not env_path.is_file():
+            raise FileNotFoundError(
+                f"Detector checkpoint from {env_var} was not found: {env_path}."
+            )
+        return env_path.resolve()
+
+    for candidate in default_paths:
+        if candidate.is_file():
+            return candidate.resolve()
+
+    fallback = default_paths[-1] if default_paths else Path(DEFAULT_DETECTOR_MODEL_PATHS[-1])
+    return fallback.resolve()
 
 
 class YOLOv3TinyPerception:

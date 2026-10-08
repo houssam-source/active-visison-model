@@ -1,251 +1,240 @@
-# Active Vision Model
+# Embodied AI Runtime
 
-This repository contains a lightweight active-vision and tracking prototype built around camera distortion correction and a Gaussian Mixture Probability Hypothesis Density (GM-PHD) tracker.
+This repository is an embodied-perception and swarm-simulation project that runs in two modes:
 
-## Project Overview
+- a software-first runtime for local simulation and browser preview
+- an optional Genesis-based simulation path when a compatible runtime is available
 
-The project combines camera geometry, multi-target tracking, and active-view planning:
+The current project is organized as a single runtime shell that keeps the simulation and detection layers in one app, while still exposing the detector API and the browser dashboard.
 
-1. Camera calibration and distortion correction for image geometry.
-2. Multi-target tracking using a simplified Gaussian-mixture PHD approach in polar coordinates.
-3. Spatiotemporal neighbor beliefs and uncertainty-guided heading selection.
+## What this project does
 
-The overall workflow is:
+The system combines:
 
-- the camera model corrects projected image coordinates,
-- the tracker predicts target motion in a 4D state space,
-- measurements are converted from Cartesian to polar form,
-- an extended Kalman filter updates each Gaussian component,
-- weak/duplicate components are pruned and merged to keep the mixture manageable,
-- the uncertainty model builds a grid, and a heading planner selects a candidate field of view with high remaining uncertainty.
+- a YOLO-based detector for perception
+- a tracking and uncertainty loop for belief updates
+- a swarm planning loop for heading selection and control
+- a live web dashboard for previewing the simulation
+- an optional Genesis host for higher-fidelity visual simulation
 
-## Architecture
+The important design choice is that the simulator is not treated as a separate product. The app is built as one runtime environment, where perception can be used as a sensor input while the world simulation remains the primary execution path.
 
-### 1. Distortion Correction
-The distortion helper code is intended to model camera lens distortion and recover corrected image coordinates. This is useful when working with real sensors that introduce radial or tangential distortion errors.
-
-Core idea:
-
-- estimate the camera intrinsics,
-- project points through the distortion model,
-- undo the distortion so downstream tracking uses physically consistent coordinates.
-
-### 2. Bounding Box Utilities
-The bounding-box logic is typically used to convert pixel-space detections into trackable observations or regions of interest. In active-vision systems, bounding boxes often serve as input for object association, filtering, or motion estimation.
-
-### 3. GM-PHD Tracking
-The file `GMHPHDtracker.py` implements a simplified Gaussian-mixture PHD tracker.
-
-The tracker maintains a list of Gaussian components, each containing:
-
-- `mean`: the 4D state estimate for position and velocity,
-- `cov`: the state covariance,
-- `weight`: the component weight used for pruning and mixture management.
-
-The main stages are:
-
-#### Prediction
-The state transition matrix advances each Gaussian forward in time and adds process noise. This step models target motion between sensor updates.
-
-#### Measurement update
-Measurements in polar coordinates are converted to the expected observation model using a Jacobian-based EKF update. The residual is computed between the actual measurement and the predicted measurement, then used to update the mean and covariance.
-
-#### Birth of new components
-Unmatched measurements are initialized as new Gaussian components with larger uncertainty so they can be absorbed as newly observed targets.
-
-#### Pruning and merging
-The tracker removes weak components and merges nearby ones to keep the number of Gaussians bounded and avoid exponential growth.
-
-### 4. Neighbor Beliefs and Uncertainty
-`GPNeighborBelief.py` provides a spatiotemporal Gaussian-process belief using a Matérn 3/2 kernel. `GPNeighborBelief` stores labeled observations and predicts a mean and uncertainty at a queried position and time.
-
-`UncertaintyQuantifier` creates a 2D coordinate grid and computes an uncertainty matrix from a list of GP-like objects. Its inputs implement `prune_old_data(t_now)` and `predict(x, y, t_now)`. The field-of-view mask uses a 90-degree cone and the configured sensor range.
-
-### 5. Heading Selection
-`tsp_alg.py` contains `TSPHeadingPlanner`. Despite the module name, this is a discrete heading search, not a traveling-salesperson route optimizer. It scores candidate headings by summing uncertainty values inside the corresponding field of view and returns the selected heading and score. It accepts the uncertainty matrix and coordinate grids produced by `UncertaintyQuantifier`.
-
-Example:
-
-```python
-from GPNeighborBelief import UncertaintyQuantifier
-from tsp_alg import TSPHeadingPlanner
-
-quantifier = UncertaintyQuantifier(max_fov_range=8.0)
-uncertainty = quantifier.compute_UNC_matrix(gp_models, uav_heading, t_now)
-planner = TSPHeadingPlanner(max_fov_range=quantifier.max_fov_range)
-next_heading, reward = planner.select_best_heading(
-	uncertainty,
-	quantifier.X_grid,
-	quantifier.Y_grid,
-	current_heading=uav_heading,
-)
-```
-
-`gp_models` is a list of objects implementing the prediction and pruning methods described above. The heading planner prefers the current heading when candidate rewards tie, avoiding unnecessary heading changes.
-
-## File structure
-
-- `bounding_box.py` – helper functions related to region and object boundaries.
-- `distortion_correction.py` – distortion compensation and camera coordinate utilities.
-- `GMHPHDtracker.py` – Gaussian-mixture PHD tracking implementation.
-- `GPNeighborBelief.py` – spatiotemporal GP belief and uncertainty-grid implementation.
-- `tsp_alg.py` – uncertainty-scored candidate heading planner.
-- `api_server.py` – FastAPI health, model-info, and YOLO detection endpoints.
-- `train_yolo.py` – trains the custom detector and installs its best checkpoint at `models/drone_yolov8n.pt`.
-- `test_distortion_correction.py` – camera geometry tests.
-- `test_gmphdtracker.py` – tracker update, merging, and input-validation tests.
-- `test_tsp_alg.py` – heading selection and uncertainty-grid integration tests.
-- `Mockgp.py` – standalone uncertainty-grid behavior tests using a mock GP.
-
-## Setup and Tests
-
-The project requires Python and NumPy. Install NumPy in the active environment with:
-
-```sh
-python -m pip install numpy
-```
-
-Run the discoverable tests with Python's built-in `unittest` runner:
-
-```sh
-python -m unittest discover -v
-```
-
-Run the standalone uncertainty-grid checks with:
-
-```sh
-python Mockgp.py
-```
-
-### Train and run the custom YOLO detector
-
-The prepared dataset is expected at `~/Downloads/yolo_dataset`, with `images/{train,val,test}`, matching `labels/{train,val,test}`, and `data.yaml`. Before training, replace the placeholder `class_0` through `class_4` names in `data.yaml` with the actual class names. Class IDs must stay in the existing `0` to `4` order.
-
-Install the detector dependencies and train from the pretrained YOLOv8 nano checkpoint:
-
-```powershell
-python -m pip install -r requirements-yolo.txt
-python train_yolo.py --epochs 30 --imgsz 640 --batch 8 --device auto
-```
-
-The 30 epochs are a maximum. Custom early stopping begins after epoch 12 and requires six epochs without a recall gain of at least 0.002, plus five stable epochs of training losses and validation losses/scores. The script saves epoch history, plots, a numeric confusion matrix, per-class recall metrics, a text error analysis, and the best checkpoint. `--device auto` selects CUDA when available and otherwise uses CPU.
-
-For Kaggle, run after the dataset extraction cell has written `/kaggle/working/yolo_data.yaml`. Put the repository on the notebook's working path, enable a GPU accelerator if available, and run:
-
-```python
-!python train_yolo.py --data /kaggle/working/yolo_data.yaml --epochs 30 --imgsz 640 --batch 8 --device auto --project /kaggle/working/runs/detect --output-model /kaggle/working/models/drone_yolov8n.pt --name drone_train_30ep
-```
-
-The Kaggle run and its confusion analysis are saved under `/kaggle/working/runs/detect/`; the exported checkpoint is `/kaggle/working/models/drone_yolov8n.pt`. To analyze an existing checkpoint without retraining, add `--analyze-only --model /kaggle/working/models/drone_yolov8n.pt`.
-
-Run one-image detection with the trained checkpoint:
-
-```powershell
-python yolov3_backbone.py "C:\path\to\image.jpg" --model "models\drone_yolov8n.pt"
-```
-
-The perception API automatically prefers `models/drone_yolov8n.pt` after training. Start it with:
-
-```powershell
-python -m uvicorn api_server:app --host 127.0.0.1 --port 8000
-```
-
-Upload an image to the API with `curl.exe -F "file=@C:\path\to\image.jpg" http://127.0.0.1:8000/detect`.
-
-Run the simulator after the trained checkpoint exists:
-
-```powershell
-python genesis_bridge.py
-```
-
-The bridge uses the trained checkpoint by default; set `YOLO_MODEL_PATH` to select another `.pt` file. The detector maps box centers through the matching depth frame into range/bearing measurements, then the existing tracker, GP belief, uncertainty grid, and heading planner drive the yaw-control loop.
+## Architecture overview
 
 ```mermaid
 flowchart LR
-	A[YOLO dataset: images and labels] --> B[train_yolo.py]
-	B --> C[Validation and best checkpoint]
-	C --> D[models/drone_yolov8n.pt]
-	D --> E[YOLO detection: boxes, classes, confidence]
-	F[RGB camera frame] --> E
-	E --> G[Box centers plus depth frame]
-	H[Depth camera frame] --> G
-	G --> I[Local range and bearing]
-	I --> J[World-frame measurements]
-	J --> K[GM-PHD tracker]
-	K --> L[GP belief and uncertainty grid]
-	L --> M[Heading planner and yaw control]
-	M --> F
-	D --> N[FastAPI /detect endpoint]
-	N --> O[JSON detection response]
+    A[Browser UI] --> B[FastAPI runtime shell]
+    B --> C[EmbodiedSwarmRuntime]
+    C --> D[SwarmActiveVisionEnv]
+    D --> E[Software simulation path]
+    D --> F[Optional Genesis path]
+
+    E --> G[Synthetic drone motion]
+    E --> H[Perception loop]
+    E --> I[GM-PHD tracker]
+    I --> J[GP neighbor belief]
+    J --> K[Uncertainty grid]
+    K --> L[Heading planner]
+    L --> M[Live preview frame]
+
+    B --> N[YOLO detector backend]
+    N --> O[Detection API]
+    O --> P[JSON / image responses]
+    A --> P
 ```
 
-### Perception API
+## Runtime structure
 
-Install the API dependencies, download the Kaggle T4 checkpoint into the local project, and start the perception GUI/API:
+### 1. App shell: embodied_app.py
+This file is the main FastAPI application and the main entry point for the live project.
 
-```sh
-python -m pip install -r requirements-api.txt -r requirements-yolo.txt
-python -m pip install kagglehub
-python download_kaggle_model.py
-python -m uvicorn api_server:app --host 127.0.0.1 --port 8000
+Responsibilities:
+- serves the UI from the static dashboard
+- exposes the health, model, detection, and simulation API routes
+- creates a single runtime object shared across endpoints
+- provides a software-safe simulation path when Genesis is absent or failing
+
+Key routes:
+- GET /health
+- GET /model
+- POST /detect
+- POST /simulation/start
+- GET /simulation/view
+- GET /simulation/preview
+
+The app intentionally keeps the detector and simulation in one runtime instead of splitting them into separate standalone systems.
+
+### 2. Runtime core: swarmmanager.py
+This is the simulation engine used by the main runtime.
+
+Responsibilities:
+- create drone agents and world state
+- update each agent's heading and motion
+- maintain per-agent perception and planning state
+- generate a live preview image
+- switch between software simulation and Genesis-backed simulation cleanly
+
+Main classes:
+- SyntheticSoftwarePerception
+  - lightweight synthetic sensor used when the project is running without a real model or visual host
+- SwarmActiveVisionEnv
+  - the environment class that manages drone state, motion, and the update loop
+  - uses the software path by default in headless environments
+- EmbodiedSwarmRuntime
+  - wrapper used by the API to create and run the simulation
+
+### 3. Perception layer: yolov3_backbone.py
+This module wraps the detector model used by the app.
+
+Responsibilities:
+- resolve the model checkpoint path
+- load Ultralytics YOLO
+- process an RGB image into detections
+- convert image-space detections into measurement values
+- support both detector API use and simulator perception use
+
+Main symbol:
+- YOLOv3TinyPerception
+
+Even though the class name is historical, it is the active detector layer used by the current project.
+
+### 4. Tracking layer: GMHPHDtracker.py
+This is the belief-tracking subsystem.
+
+Responsibilities:
+- maintain Gaussian components for tracked entities
+- perform prediction and measurement update
+- prune weak components and merge overlap
+- keep a compact mixture approximation of the swarm belief
+
+This is the core state-estimation loop inside the embedded world runtime.
+
+### 5. Spatial belief and uncertainty: GPNeighborBelief.py
+This module creates the spatiotemporal belief model.
+
+Responsibilities:
+- keep recent observed samples
+- estimate a belief surface over space and time
+- compute uncertainty over a grid
+- provide the uncertainty signal used by the planner
+
+Important components:
+- GPNeighborBelief
+- UncertaintyQuantifier
+
+The planner uses this uncertainty to decide where the agent should look next.
+
+### 6. Planning layer: tsp_alg.py
+This file contains the heading planner.
+
+Responsibilities:
+- sample candidate headings
+- score each heading by uncertainty in the visible region
+- choose the heading with the highest reward
+- keep heading changes smooth and stable
+
+Main symbol:
+- TSPHeadingPlanner
+
+Although the name is legacy, its purpose in the current system is local uncertainty-driven heading selection, not a traveling-salesperson optimizer.
+
+### 7. Browser UI: static/index.html
+This is the front-end dashboard shown in the browser.
+
+Responsibilities:
+- render the simulation preview and control panel
+- show live runtime metrics
+- allow the user to trigger the swarm run and refresh the preview
+- present the detector dashboard and model information alongside the simulation view
+
+The UI is designed to support the embodied runtime in a browser-first workflow, which is especially useful in a headless Windows environment.
+
+### 8. Optional Genesis backend: genesis_bridge.py
+Genesis remains an optional simulation backend, not the required runtime path.
+
+Responsibilities:
+- create a higher-fidelity scene when Genesis is installed and usable
+- render the agent and camera world
+- connect perception, tracking, and planning to the simulated environment
+
+In the current project, the software simulation is preferred because it remains stable in local headless environments.
+
+### 9. Training and model pipeline
+The repo also contains the training and checkpoint support files:
+
+- train_yolo.py
+  - trains the custom detector
+- download_kaggle_model.py
+  - downloads a published model checkpoint
+- requirements-yolo.txt
+  - dependencies for training and inference
+- requirements-api.txt
+  - dependencies for the FastAPI runtime
+
+This means the system supports both the model-training workflow and the live runtime workflow.
+
+## Data flow
+
+1. The browser sends commands to the FastAPI runtime.
+2. The runtime initializes the simulation environment.
+3. The environment updates drone state and synthetic camera frames.
+4. The perception system extracts measurements or detections.
+5. The tracker updates the current belief state.
+6. Uncertainty is mapped over the world grid.
+7. The planner selects the next heading.
+8. The latest frame is returned to the browser preview.
+
+The project is built to follow an embodied loop:
+
+- perception
+- belief update
+- uncertainty estimation
+- planning
+- control
+- visualization
+
+## Start the app locally
+
+From the project root:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn embodied_app:app --host 127.0.0.1 --port 8014
 ```
 
-Open `http://127.0.0.1:8000/` for the perception dashboard or `http://127.0.0.1:8000/docs` for the interactive API docs. The dashboard supports image upload/drop, confidence adjustment, annotated detections, JSON/image export, checkpoint status, local epoch metrics, and per-class recall when training reports are present. The API also exposes `GET /health`, `GET /model`, `GET /metrics`, and `POST /detect`. The 30-epoch checkpoint is preferred when present; `YOLO_MODEL_PATH` can select another checkpoint. Configure KaggleHub authentication locally before downloading the Kaggle model.
+Then open:
 
-### Deploy the dashboard to Vercel
+- http://127.0.0.1:8014/
+- http://127.0.0.1:8014/docs
 
-Vercel hosts the static dashboard only. Keep `api_server.py`, PyTorch, and the YOLO checkpoint on a Python-capable host; the dashboard cannot load or run those weights inside Vercel's static deployment. Deploy this repository to Vercel with `vercel.json` selecting `static` as the output directory. Deploy the FastAPI service separately, make it reachable over HTTPS, and configure its environment:
+## Current runtime behavior
 
-```text
-YOLO_MODEL_PATH=/path/to/drone_yolov8n_30ep.pt
-CORS_ORIGINS=https://your-project.vercel.app,http://127.0.0.1:8000,http://localhost:8000
-```
+The stable runtime path now is:
 
-Open the Vercel dashboard, paste the public FastAPI origin into **Inference API URL**, and choose **Connect backend**. The setting is saved in that browser. Use a persistent Python host with sufficient memory for PyTorch/model loading; Vercel serverless functions are not the inference host for this project.
+- software simulation enabled by default
+- no forced Genesis initialization in the main app flow
+- browser view generated from the live simulation state
+- detection API kept available as a feature, not the main runtime target
 
-### Genesis simulation bridge
+This is the correct architecture for a software-first embodied system running in a local headless environment.
 
-The optional Genesis bridge runs on CPU by default. In the active virtual environment, install the CPU PyTorch build followed by Genesis World:
+## Repository contents
 
-```sh
-python -m pip install -r requirements-yolo.txt
-python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-python -m pip install genesis-world
-python genesis_bridge.py
-```
+Key files in the project:
 
-The bridge uses Genesis' bundled CF2X quadrotor and connects the YOLO detector to the local tracker, GP belief, uncertainty grid, and heading planner. Its camera preview stays open until you press `Q` or `Esc`, or close the window. A custom `measurement_provider` callback can still be passed to `GenesisSwarmBridge` for alternate perception sources. For NVIDIA GPU use, install the PyTorch build matching the local CUDA setup before installing Genesis World.
+- embodied_app.py — main app shell
+- swarmmanager.py — swarm environment and runtime
+- yolov3_backbone.py — detector backend
+- GMHPHDtracker.py — tracking
+- GPNeighborBelief.py — GP belief and uncertainty
+- tsp_alg.py — heading planner
+- static/index.html — browser UI
+- genesis_bridge.py — optional Genesis support
+- train_yolo.py — training pipeline
+- api_server.py — earlier API implementation and detection server
+- PROJECT_ARCHITECTURE.md — deeper design notes
 
-## Notes on the implementation
+## Notes
 
-This code is intentionally educational and experimental. It demonstrates a practical pattern for combining:
-
-- sensor calibration,
-- observation modeling,
-- EKF-based updates,
-- Gaussian-mixture filtering,
-- and mixture management for multi-target tracking.
-
-It is a simplified prototype and is not a full production-grade multi-target tracking system.
-
-## Credits and attribution
-
-This project builds on ideas and patterns from the active perception and multi-target tracking literature, especially Gaussian-mixture PHD filtering and extended Kalman filtering for nonlinear observation models.
-
-The original concepts and implementation principles are credited to the broader research community in target tracking and Bayesian filtering, especially the work on:
-
-- Probability Hypothesis Density (PHD) filters,
-- Gaussian Mixture PHD (GM-PHD) methods,
-- Extended Kalman filtering for polar measurement models,
-- and active vision / perception-driven tracking systems.
-
-This repository is maintained as a practical adaptation and study implementation. Credit is due to the original authors and researchers whose methods inspired this code.
-
-## Usage notes
-
-This project is intended for experimentation and testing in a Python environment. It is useful as a baseline for:
-
-- learning Gaussian-mixture filtering,
-- testing sensor correction methods,
-- exploring active-vision tracking pipelines,
-- and extending the tracker for more advanced association and target management logic.
+This project is designed as an experimental embodied AI runtime and not as a fixed hardware-only drone stack. The simulation-first path is deliberately intended to be runnable before hardware or model integration is connected.

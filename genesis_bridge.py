@@ -1,16 +1,42 @@
 import os
-import genesis as gs
+from pathlib import Path
+
+try:
+    import genesis as gs
+except Exception:  # pragma: no cover - simulator stack is optional at runtime
+    gs = None
+
 import cv2
 import numpy as np
-from pathlib import Path
 
 from GMHPHDtracker import GMPHDTracker
 from GPNeighborBelief import GPNeighborBelief, UncertaintyQuantifier
 from tsp_alg import TSPHeadingPlanner
-from yolov3_backbone import YOLOv3TinyPerception
+from yolov3_backbone import YOLOv3TinyPerception, resolve_detector_model_path
 
 
 DEFAULT_DETECTOR_PATH = Path(__file__).resolve().parent / "models" / "drone_yolov8n.pt"
+
+
+def build_measurement_provider(measurement_provider=None, detector=None):
+    if measurement_provider is not None:
+        return measurement_provider
+    if detector is not None:
+        return detector
+    return None
+
+
+def resolve_detector_runtime_path(detector_model_path=None):
+    default_paths = [
+        Path(__file__).resolve().parent / "models" / "drone_yolov8n.pt",
+        Path(__file__).resolve().parent / "models" / "drone_yolov8n_30ep.pt",
+        Path(__file__).resolve().parent / "yolov8n.pt",
+    ]
+    return resolve_detector_model_path(
+        model_path=detector_model_path,
+        default_paths=default_paths,
+        env_var="YOLO_MODEL_PATH",
+    )
 
 
 class GenesisSwarmBridge:
@@ -26,22 +52,25 @@ class GenesisSwarmBridge:
     ):
         if control_hz <= 0:
             raise ValueError("control_hz must be positive")
+        if gs is None:
+            raise ImportError(
+                "Genesis is required for the simulator runtime. "
+                "Install genesis-world and its dependencies first."
+            )
 
         self.detector = detector
-        if measurement_provider is None and self.detector is None:
-            model_path = detector_model_path or os.getenv(
-                "YOLO_MODEL_PATH", str(DEFAULT_DETECTOR_PATH)
-            )
-            if not Path(model_path).is_file():
-                raise FileNotFoundError(
-                    f"Trained YOLO checkpoint not found: {model_path}. "
-                    "Run train_yolo.py first or set YOLO_MODEL_PATH."
-                )
+        self.measurement_provider = build_measurement_provider(
+            measurement_provider=measurement_provider,
+            detector=self.detector,
+        )
+        if self.measurement_provider is None and self.detector is None:
+            model_path = resolve_detector_runtime_path(detector_model_path)
             self.detector = YOLOv3TinyPerception(
-                model_path=model_path,
+                model_path=str(model_path),
                 res=(640, 480),
                 fov_deg=45.0,
             )
+            self.measurement_provider = self.detector
 
         gs.init(backend=gs.cpu if backend is None else backend)
         self.camera_gui = camera_gui

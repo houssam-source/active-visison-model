@@ -126,6 +126,21 @@
     .confidence-fill { display: block; height: 100%; background: var(--teal); }
     .empty-row { padding: 20px 12px; color: var(--muted); font: 11px Consolas, monospace; }
 
+    .simulation-section { margin-top: 34px; }
+    .simulation-wrap { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 24px; align-items: start; }
+    .sim-panel { background: var(--panel); box-shadow: var(--shadow); border: 1px solid var(--line); padding: 18px; }
+    .sim-controls { background: var(--ink); color: #f4f5ec; box-shadow: var(--shadow); padding: 20px; }
+    .sim-btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+    .sim-btn { min-height: 38px; padding: 0 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-weight: 700; }
+    .sim-btn.primary { background: var(--acid); border-color: var(--acid); }
+    .sim-btn.secondary { background: transparent; color: var(--acid); border-color: #58615d; }
+    .sim-input { margin-top: 12px; width: 100%; min-height: 38px; padding: 0 8px; background: #1f2523; color: #f5f6ed; border: 1px solid #5a625d; }
+    .sim-preview { min-height: 320px; display: grid; place-items: center; background: linear-gradient(180deg, #141916, #111715); }
+    .sim-preview img { max-width: 100%; max-height: 420px; object-fit: contain; display: block; border: 1px solid #2d3936; background: #080b0a; }
+    .sim-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+    .sim-stat { background: #f2f3ee; border: 1px solid var(--line); padding: 10px 12px; }
+    .sim-stat-label { color: var(--muted); font: 10px Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; }
+    .sim-stat-value { margin-top: 6px; font-size: 18px; font-weight: 760; }
     .metrics-section { margin-top: 38px; }
     .metrics-topline { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
     .metrics-topline h2 { margin: 0; font-size: 19px; }
@@ -276,6 +291,40 @@
           <thead><tr><th>Class</th><th>Confidence</th><th>Box coordinates (x1, y1, x2, y2)</th><th>Center (x, y)</th></tr></thead>
           <tbody id="detectionRows"><tr><td class="empty-row" colspan="4">No detections to display.</td></tr></tbody>
         </table>
+      </div>
+    </section>
+
+    <section id="simulation" class="simulation-section" aria-label="Live simulation dashboard">
+      <div class="section-heading"><h2>Swarm simulation</h2><span>Software host</span></div>
+      <div class="simulation-wrap" style="margin-top:18px">
+        <aside class="sim-controls">
+          <div class="section-tag">Live runtime</div>
+          <div class="control-title" style="margin-bottom:0">Simulation control</div>
+          <label class="control-label" for="simFrames" style="margin-top:18px"><span>Frames per run</span></label>
+          <input id="simFrames" class="sim-input" type="number" min="1" max="200" step="1" value="10">
+          <label class="check-row" for="simAutoRefresh" style="padding-top:14px"><span>Auto-refresh preview</span><input id="simAutoRefresh" type="checkbox" checked></label>
+          <div class="sim-btn-row">
+            <button id="startSimButton" class="sim-btn primary" type="button">Run swarm</button>
+            <button id="refreshSimButton" class="sim-btn secondary" type="button">Refresh</button>
+          </div>
+          <div id="simStatus" class="control-hint" style="margin-top:16px">Awaiting simulation start.</div>
+        </aside>
+        <div class="sim-panel">
+          <div class="sim-preview">
+            <img id="simulationFrame" src="" alt="Swarm simulation preview" style="display:none">
+            <div id="simEmptyState" class="empty-state" style="padding:24px">
+              <div class="target-mark" aria-hidden="true"><span class="target-core"></span></div>
+              <div class="empty-title">No live frame</div>
+              <div class="empty-subtitle">Run the simulation to start the swarm preview</div>
+            </div>
+          </div>
+          <div class="sim-metrics">
+            <div class="sim-stat"><div class="sim-stat-label">Agent heading</div><div id="simHeading" class="sim-stat-value">--</div></div>
+            <div class="sim-stat"><div class="sim-stat-label">Reward</div><div id="simReward" class="sim-stat-value">--</div></div>
+            <div class="sim-stat"><div class="sim-stat-label">Measurement count</div><div id="simMeasurements" class="sim-stat-value">--</div></div>
+            <div class="sim-stat"><div class="sim-stat-label">Uncertainty</div><div id="simUncertainty" class="sim-stat-value">--</div></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -614,6 +663,44 @@
         }
       }
 
+      async function refreshSimulationPreview() {
+        try {
+          const response = await fetch(apiUrl("/simulation/preview"), { cache: "no-store" });
+          const payload = await response.json();
+          if (!response.ok || !payload || !payload.available) {
+            byId("simStatus").textContent = payload?.message || "Simulation preview not ready yet.";
+            return;
+          }
+          if (payload.frame) {
+            byId("simulationFrame").src = `data:image/jpeg;base64,${payload.frame}`;
+            byId("simulationFrame").style.display = "block";
+            byId("simEmptyState").style.display = "none";
+          }
+          const state = payload.agent_state || {};
+          byId("simHeading").textContent = state.heading != null ? `${Number(state.heading).toFixed(2)} rad` : "--";
+          byId("simReward").textContent = state.reward != null ? `${Number(state.reward).toFixed(2)}` : "--";
+          byId("simMeasurements").textContent = state.measurement_count != null ? `${state.measurement_count}` : "--";
+          byId("simUncertainty").textContent = state.uncertainty_mean != null ? `${Number(state.uncertainty_mean).toFixed(2)}` : "--";
+          byId("simStatus").textContent = `Live swarm state • target yaw ${state.target_yaw != null ? Number(state.target_yaw).toFixed(2) : "--"}`;
+        } catch (error) {
+          byId("simStatus").textContent = "Simulation preview unavailable.";
+        }
+      }
+
+      async function startSimulation() {
+        try {
+          const frames = Number(byId("simFrames").value || 1);
+          byId("simStatus").textContent = "Starting simulation loop...";
+          const response = await fetch(apiUrl(`/simulation/start?frames=${frames}&camera_gui=false`), { method: "POST" });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.detail || "Simulation failed to start.");
+          byId("simStatus").textContent = `Simulation running • ${frames} frames requested`;
+          await refreshSimulationPreview();
+        } catch (error) {
+          byId("simStatus").textContent = error.message || "Simulation cannot start.";
+        }
+      }
+
       byId("chooseButton").addEventListener("click", () => input.click());
       byId("apiOrigin").value = apiBase;
       byId("connectApi").addEventListener("click", () => {
@@ -632,7 +719,16 @@
       });
       input.addEventListener("change", () => chooseFile(input.files[0]));
       byId("detectButton").addEventListener("click", runDetection);
+      byId("startSimButton").addEventListener("click", startSimulation);
+      byId("refreshSimButton").addEventListener("click", refreshSimulationPreview);
       byId("confidence").addEventListener("input", (event) => { byId("confidenceValue").textContent = Number(event.target.value).toFixed(2); });
+      byId("simAutoRefresh").addEventListener("change", (event) => {
+        if (event.target.checked) {
+          window.simRefreshTimer = setInterval(refreshSimulationPreview, 2000);
+        } else {
+          clearInterval(window.simRefreshTimer);
+        }
+      });
       byId("showLabels").addEventListener("change", () => renderOverlay(lastResponse?.detections || []));
       byId("showConfidence").addEventListener("change", () => renderOverlay(lastResponse?.detections || []));
       byId("downloadImage").addEventListener("click", () => {
@@ -662,6 +758,7 @@
       }
       dropzone.addEventListener("drop", (event) => chooseFile(event.dataTransfer.files[0]));
       window.addEventListener("resize", () => { if (window.metricHistory) drawMetricChart(window.metricHistory); });
+      window.simRefreshTimer = setInterval(refreshSimulationPreview, 2000);
 
       loadSystemInfo();
     })();

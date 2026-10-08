@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from yolov3_backbone import YOLOv3TinyPerception
+from yolov3_backbone import YOLOv3TinyPerception, resolve_detector_model_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -22,22 +22,14 @@ BASELINE_MODEL_PATH = PROJECT_ROOT / "models" / "drone_yolov8n.pt"
 BASE_MODEL_PATH = PROJECT_ROOT / "yolov8n.pt"
 WEB_UI_PATH = PROJECT_ROOT / "static" / "index.html"
 RUNS_DIR = PROJECT_ROOT / "runs" / "detect"
-MODEL_PATH = os.getenv(
-    "YOLO_MODEL_PATH",
-    str(
-        next(
-            (
-                path
-                for path in (
-                    LATEST_TRAINED_MODEL_PATH,
-                    BASELINE_MODEL_PATH,
-                    BASE_MODEL_PATH,
-                )
-                if path.is_file()
-            ),
+MODEL_PATH = str(
+    resolve_detector_model_path(
+        default_paths=[
+            LATEST_TRAINED_MODEL_PATH,
+            BASELINE_MODEL_PATH,
             BASE_MODEL_PATH,
-        )
-    ),
+        ]
+    )
 )
 MODEL_WIDTH = 1920
 MODEL_HEIGHT = 1080
